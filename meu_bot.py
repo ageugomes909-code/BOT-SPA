@@ -1,32 +1,32 @@
 import os
 import asyncio
 import random
+import aiohttp
 import discord
 from discord.ext import commands
 from discord import app_commands
 
-# Configuração dos Intents
+# Configuração dos Intents corrigida
 intents = discord.Intents.default()
 intents.guilds = True
 intents.members = True
-intents.messages = True
+intents.message_content = True
 
 client = commands.Bot(command_prefix="!", intents=intents)
 
-# Pegando as variáveis de ambiente configuradas no Render
 TOKEN = os.getenv("DISCORD_TOKEN")
 CANAL_LOGS_ID = int(os.getenv("LOG_CHANNEL_ID", "0"))
 
 @client.event
 async def on_ready():
-    print(f"[SYS_OK] Core conectado como {client.user.tag}")
+    print(f"[SYS_OK] Core conectado como {client.user.name}")
     try:
         synced = await client.tree.sync()
         print(f"[API_SYNC] {len(synced)} comandos Slash sincronizados com sucesso.")
     except Exception as e:
         print(f"[CRITICAL_ERROR] Erro ao sincronizar comandos: {e}")
 
-# COMANDO /CONFIG_PERFIL (Muda nome e foto do bot)
+# COMANDO /CONFIG_PERFIL
 @client.tree.command(name="config_perfil", description="[ROOT] Altera o nome e a foto de perfil do bot em tempo de execução.")
 @app_commands.describe(novo_nome="Novo nome para o bot", nova_foto_url="Link direto da nova foto (URL PNG/JPG)")
 @app_commands.default_permissions(administrator=True)
@@ -72,7 +72,6 @@ async def executar_payload(interaction: discord.Interaction, payload_msg: str):
     if not log_channel:
         return await interaction.edit_reply(content="⚠️ **[ERRO]** Canal de logs não encontrado! Verifique o ID configurado no Render.")
 
-    # Garante que todos os membros estão cacheados
     await guild.fetch_members()
     membros = [m for m in guild.members if not m.bot]
     total_alvos = len(membros)
@@ -126,7 +125,6 @@ async def executar_payload(interaction: discord.Interaction, payload_msg: str):
             
             await log_channel.send(embed=error_embed)
 
-        # Delay para evitar rate-limit do Discord
         await asyncio.sleep(1)
 
     end_embed = discord.Embed(
@@ -141,12 +139,8 @@ async def executar_payload(interaction: discord.Interaction, payload_msg: str):
     
     await log_channel.send(embed=end_embed)
 
-# Importação necessária para baixar a foto por URL no Python
-import aiohttp
-
 if __name__ == "__main__":
     if not TOKEN:
         print("[CRITICAL_ERROR] Token do Discord não encontrado nas variáveis de ambiente!")
     else:
         client.run(TOKEN)
-
