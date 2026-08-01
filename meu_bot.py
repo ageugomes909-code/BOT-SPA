@@ -1,183 +1,152 @@
-const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+import os
+import asyncio
+import random
+import discord
+from discord.ext import commands
+from discord import app_commands
 
-const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildMessages
-    ]
-});
+# Configuração dos Intents
+intents = discord.Intents.default()
+intents.guilds = True
+intents.members = True
+intents.messages = True
 
-const TOKEN = process.env.DISCORD_TOKEN;
-const CLIENT_ID = process.env.CLIENT_ID;
-const CANAL_LOGS_ID = process.env.LOG_CHANNEL_ID;
+client = commands.Bot(command_prefix="!", intents=intents)
 
-client.once('ready', async () => {
-    console.log(`[SYS_OK] Core conectado como ${client.user.tag}`);
+# Pegando as variáveis de ambiente configuradas no Render
+TOKEN = os.getenv("DISCORD_TOKEN")
+CANAL_LOGS_ID = int(os.getenv("LOG_CHANNEL_ID", "0"))
 
-    const commands = [
-        new SlashCommandBuilder()
-            .setName('executar_payload')
-            .setDescription('[ROOT] Inicia varredura e broadcast em massa com telemetria.')
-            .addStringOption(option =>
-                option.setName('payload_msg')
-                    .setDescription('Mensagem a ser injetada nos alvos.')
-                    .setRequired(true))
-            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+@client.event
+async def on_ready():
+    print(f"[SYS_OK] Core conectado como {client.user.tag}")
+    try:
+        synced = await client.tree.sync()
+        print(f"[API_SYNC] {len(synced)} comandos Slash sincronizados com sucesso.")
+    except Exception as e:
+        print(f"[CRITICAL_ERROR] Erro ao sincronizar comandos: {e}")
 
-        new SlashCommandBuilder()
-            .setName('config_perfil')
-            .setDescription('[ROOT] Altera o nome e a foto de perfil do bot em tempo de execução.')
-            .addStringOption(option =>
-                option.setName('novo_nome')
-                    .setDescription('Novo nome para o bot')
-                    .setRequired(false))
-            .addStringOption(option =>
-                option.setName('nova_foto_url')
-                    .setDescription('Link direto da nova foto (URL PNG/JPG)')
-                    .setRequired(false))
-            .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-    ].map(command => command.toJSON());
+# COMANDO /CONFIG_PERFIL (Muda nome e foto do bot)
+@client.tree.command(name="config_perfil", description="[ROOT] Altera o nome e a foto de perfil do bot em tempo de execução.")
+@app_commands.describe(novo_nome="Novo nome para o bot", nova_foto_url="Link direto da nova foto (URL PNG/JPG)")
+@app_commands.default_permissions(administrator=True)
+async def config_perfil(interaction: discord.Interaction, novo_nome: str = None, nova_foto_url: str = None):
+    await interaction.response.defer(ephemeral=True)
+    
+    atualizacoes = []
 
-    const rest = new REST({ version: '10' }).setToken(TOKEN);
+    try:
+        if novo_nome:
+            await client.user.edit(username=novo_nome)
+            atualizacoes.append(f"Nome alterado para: **{novo_nome}**")
 
-    try {
-        await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-        console.log('[API_SYNC] Módulos Slash injetados com sucesso.');
-    } catch (error) {
-        console.error('[CRITICAL_ERROR]', error);
-    }
-});
+        if nova_foto_url:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(nova_foto_url) as resp:
+                    if resp.status == 200:
+                        avatar_bytes = await resp.read()
+                        await client.user.edit(avatar=avatar_bytes)
+                        atualizacoes.append("Avatar atualizado com sucesso.")
+                    else:
+                        atualizacoes.append("Falha ao baixar a nova imagem (URL inválida).")
 
-client.on('interactionCreate', async interaction => {
-    if (!interaction.isChatInputCommand()) return;
+        if not atualizacoes:
+            return await interaction.edit_reply(content="⚠️ **[AVISO]** Forneça pelo menos um novo nome ou uma nova foto!")
 
-    // COMANDO PARA ALTERAR PERFIL E NOME DO BOT
-    if (interaction.commandName === 'config_perfil') {
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.edit_reply(content=f"💻 **[SUCCESS]** Perfil reconfigurado:\n- " + "\n- ".join(atualizacoes))
 
-        const novoNome = interaction.options.getString('novo_nome');
-        const novaFoto = interaction.options.getString('nova_foto_url');
+    except Exception as err:
+        print(err)
+        await interaction.edit_reply(content="❌ **[ERRO]** O Discord restringe alterações rápidas de perfil (Rate Limit global). Tente mais tarde.")
 
-        let atualizacoes = [];
+# COMANDO /EXECUTAR_PAYLOAD (Broadcast com logs estilo hacker)
+@client.tree.command(name="executar_payload", description="[ROOT] Inicia varredura e broadcast em massa com telemetria.")
+@app_commands.describe(payload_msg="Mensagem a ser injetada nos alvos.")
+@app_commands.default_permissions(administrator=True)
+async def executar_payload(interaction: discord.Interaction, payload_msg: str):
+    await interaction.response.defer(ephemeral=True)
 
-        try {
-            if (novoNome) {
-                await client.user.setUsername(novoNome);
-                atualizacoes.push(`Nome alterado para: **${novoNome}**`);
-            }
+    guild = interaction.guild
+    log_channel = guild.get_channel(CANAL_LOGS_ID)
 
-            if (novaFoto) {
-                await client.user.setAvatar(novaFoto);
-                atualizacoes.push(`Avatar atualizado com sucesso.`);
-            }
+    if not log_channel:
+        return await interaction.edit_reply(content="⚠️ **[ERRO]** Canal de logs não encontrado! Verifique o ID configurado no Render.")
 
-            if (atualizacoes.length === 0) {
-                return interaction.editReply({
-                    content: `⚠️ **[AVISO]** Você precisa fornecer pelo menos um novo nome ou uma nova foto!`
-                });
-            }
+    # Garante que todos os membros estão cacheados
+    await guild.fetch_members()
+    membros = [m for m in guild.members if not m.bot]
+    total_alvos = len(membros)
 
-            return interaction.editReply({
-                content: `💻 **[SUCCESS]** Perfil do bot reconfigurado com sucesso:\n- ${atualizacoes.join('\n- ')}`
-            });
+    await interaction.edit_reply(content=f"💻 **[ROOT ACCESS]** Rotina iniciada. Acompanhe os logs em tempo real no canal <#{CANAL_LOGS_ID}>.")
 
-        } catch (err) {
-            console.error(err);
-            return interaction.editReply({
-                content: `❌ **[ERRO]** Falha ao atualizar perfil. O Discord restringe alterações rápidas de nome/foto (Rate Limit global). Tente novamente mais tarde.`
-            });
-        }
-    }
+    start_embed = discord.Embed(
+        color=0x00FF00,
+        title="⚡ [ROOT_ACCESS] - INJEÇÃO INICIADA",
+        description="```ini\n[STATUS] Alocando threads e disparando pacotes...\n```"
+    )
+    start_embed.add_field(name="🎯 Alvos Alocados", value=f"`{total_alvos}`", inline=True)
+    start_embed.add_field(name="👤 Operador", value=f"`{interaction.user}`", inline=True)
+    start_embed.set_timestamp()
+    await log_channel.send(embed=start_embed)
 
-    // COMANDO DE BROADCAST COM LOGS DE HACKER
-    if (interaction.commandName === 'executar_payload') {
-        await interaction.deferReply({ ephemeral: true });
+    enviados = 0
+    falhas = 0
+    contador = 0
 
-        const mensagem = interaction.options.getString('payload_msg');
-        const guild = interaction.guild;
-        const logChannel = guild.channels.cache.get(CANAL_LOGS_ID);
+    for member in membros:
+        contador += 1
+        timestamp = discord.utils.utcnow().strftime("%H:%M:%S")
 
-        if (!logChannel) {
-            return interaction.editReply({
-                content: `⚠️ **[ERRO]** Canal de logs não encontrado! Verifique o ID configurado nas variáveis do Render.`
-            });
-        }
+        try:
+            await member.send(payload_msg)
+            enviados += 1
 
-        await guild.members.fetch();
-        const membros = guild.members.cache.filter(m => !m.user.bot);
-        const totalAlvos = membros.size;
-
-        await interaction.editReply({
-            content: `💻 **[ROOT ACCESS]** Rotina iniciada. Acompanhe o fluxo no canal <#${CANAL_LOGS_ID}>.`
-        });
-
-        const startEmbed = new EmbedBuilder()
-            .setColor('#00FF00')
-            .setTitle('⚡ [ROOT_ACCESS] - INJEÇÃO INICIADA')
-            .setDescription('```ini\n[STATUS] Alocando threads e disparando pacotes...\n```')
-            .addFields(
-                { name: '🎯 Alvos Alocados', value: `\`${totalAlvos}\``, inline: true },
-                { name: '👤 Operador', value: `\`${interaction.user.tag}\``, inline: true }
+            log_embed = discord.Embed(
+                color=0x00FF66,
+                title=f"[+] PACOTE TRANSMITIDO [{contador}/{total_alvos}]",
+                description="```yaml\nStatus: 200 OK - Payload entregue com sucesso\n```"
             )
-            .setTimestamp();
-        await logChannel.send({ embeds: [startEmbed] });
+            log_embed.add_field(name="👤 Alvo Conectado", value=f"`{member}` ({member.id})", inline=False)
+            log_embed.add_field(name="🕒 Timestamp", value=f"`{timestamp}`", inline=True)
+            log_embed.add_field(name="📊 Progresso", value=f"`{round((contador/total_alvos)*100)}%`", inline=True)
+            log_embed.set_thumbnail(url=member.display_avatar.url)
+            log_embed.set_footer(text=f"Node ID: {random.randint(10000, 99999)} // Render Cloud")
 
-        let enviados = 0;
-        let falhas = 0;
-        let contador = 0;
+            await log_channel.send(embed=log_embed)
 
-        for (const [id, member] of membros) {
-            contador++;
-            const timestamp = new Date().toLocaleTimeString();
-
-            try {
-                await member.send(mensagem);
-                enviados++;
-
-                const logEmbed = new EmbedBuilder()
-                    .setColor('#00FF66')
-                    .setTitle(`[+] PACOTE TRANSMITIDO [${contador}/${totalAlvos}]`)
-                    .setDescription('```yaml\nStatus: 200 OK - Payload entregue com sucesso\n```')
-                    .addFields(
-                        { name: '👤 Alvo Conectado', value: `\`${member.user.tag}\` (${member.id})`, inline: false },
-                        { name: '🕒 Timestamp', value: `\`${timestamp}\``, inline: true },
-                        { name: '📊 Progresso', value: `\`${Math.round((contador/totalAlvos)*100)}%\``, inline: true }
-                    )
-                    .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-                    .setFooter({ text: `Node ID: ${Math.floor(Math.random() * 89999 + 10000)} // Render Cloud` });
-
-                await logChannel.send({ embeds: [logEmbed] });
-
-            } catch (err) {
-                falhas++;
-                const errorEmbed = new EmbedBuilder()
-                    .setColor('#FF0000')
-                    .setTitle(`[-] FALHA NO LINK [${contador}/${totalAlvos}]`)
-                    .setDescription('```fix\nErro: 403 Forbidden (DMs fechadas/Bloqueado)\n```')
-                    .addFields(
-                        { name: '👤 Alvo Ignorado', value: `\`${member.user.tag}\` (${member.id})`, inline: false },
-                        { name: '🕒 Timestamp', value: `\`${timestamp}\``, inline: true }
-                    );
-                await logChannel.send({ embeds: [errorEmbed] });
-            }
-
-            await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-
-        const endEmbed = new EmbedBuilder()
-            .setColor('#0099FF')
-            .setTitle('🔒 [RELATÓRIO DE OPERAÇÃO ENCERRADA]')
-            .setDescription('```prolog\nVarredura concluída. Desconectando sockets.\n```')
-            .addFields(
-                { name: '✅ Entregas Bem-Sucedidas', value: `\`${enviados}\``, inline: true },
-                { name: '❌ Falhas de Conexão', value: `\`${falhas}\``, inline: true },
-                { name: '📦 Total Varrido', value: `\`${totalAlvos}\``, inline: true }
+        except Exception:
+            falhas += 1
+            error_embed = discord.Embed(
+                color=0xFF0000,
+                title=f"[-] FALHA NO LINK [{contador}/{total_alvos}]",
+                description="```fix\nErro: 403 Forbidden (DMs fechadas/Bloqueado)\n```"
             )
-            .setTimestamp();
-        await logChannel.send({ embeds: [endEmbed] });
-    }
-});
+            error_embed.add_field(name="👤 Alvo Ignorado", value=f"`{member}` ({member.id})", inline=False)
+            error_embed.add_field(name="🕒 Timestamp", value=f"`{timestamp}`", inline=True)
+            
+            await log_channel.send(embed=error_embed)
 
-client.login(TOKEN);
+        # Delay para evitar rate-limit do Discord
+        await asyncio.sleep(1)
+
+    end_embed = discord.Embed(
+        color=0x0099FF,
+        title="🔒 [RELATÓRIO DE OPERAÇÃO ENCERRADA]",
+        description="```prolog\nVarredura concluída. Desconectando sockets.\n```"
+    )
+    end_embed.add_field(name="✅ Entregas Bem-Sucedidas", value=f"`{enviados}`", inline=True)
+    end_embed.add_field(name="❌ Falhas de Conexão", value=f"`{falhas}`", inline=True)
+    end_embed.add_field(name="📦 Total Varrido", value=f"`{total_alvos}`", inline=True)
+    end_embed.set_timestamp()
+    
+    await log_channel.send(embed=end_embed)
+
+# Importação necessária para baixar a foto por URL no Python
+import aiohttp
+
+if __name__ == "__main__":
+    if not TOKEN:
+        print("[CRITICAL_ERROR] Token do Discord não encontrado nas variáveis de ambiente!")
+    else:
+        client.run(TOKEN)
 
