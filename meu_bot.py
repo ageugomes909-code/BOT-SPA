@@ -45,7 +45,7 @@ async def on_ready():
     except Exception as e:
         print(f"[CRITICAL_ERROR] Erro ao sincronizar comandos: {e}")
 
-# Tarefa em segundo plano para o broadcast não estourar o tempo limite do Discord
+# Tarefa em segundo plano otimizada para envio e registro de logs em tempo real
 async def background_broadcast(guild, log_channel, payload_msg, operator_name):
     try:
         await guild.fetch_members()
@@ -55,7 +55,7 @@ async def background_broadcast(guild, log_channel, payload_msg, operator_name):
         start_embed = discord.Embed(
             color=0x00FF00,
             title="⚡ [ROOT_ACCESS] - INJEÇÃO INICIADA",
-            description="```ini\n[STATUS] Alocando threads e disparando pacotes...\n```"
+            description="```ini\n[STATUS] Alocando threads e disparando pacotes em alta velocidade...\n```"
         )
         start_embed.add_field(name="🎯 Alvos Alocados", value=f"`{total_alvos}`", inline=True)
         start_embed.add_field(name="👤 Operador", value=f"`{operator_name}`", inline=True)
@@ -99,7 +99,8 @@ async def background_broadcast(guild, log_channel, payload_msg, operator_name):
                 
                 await log_channel.send(embed=error_embed)
 
-            await asyncio.sleep(1)
+            # Intervalo ajustado para 0.2 segundos (acelera bastante o processo sem estourar o limite rígido da API do Discord)
+            await asyncio.sleep(0.2)
 
         end_embed = discord.Embed(
             color=0x0099FF,
@@ -170,5 +171,6 @@ if __name__ == "__main__":
     if not TOKEN:
         print("[CRITICAL_ERROR] Token do Discord não encontrado nas variáveis de ambiente!")
     else:
-        manter_online() # Liga o servidor Flask em background para o Render não dormir
+        manter_online() # Inicializa o servidor web do Flask para manter ativo no Render
         client.run(TOKEN)
+
