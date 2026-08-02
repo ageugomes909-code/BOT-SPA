@@ -1,10 +1,6 @@
 import os
-import sys
 import asyncio
 import time
-import io
-import textwrap
-from contextlib import redirect_stdout
 from threading import Thread
 from flask import Flask
 import discord
@@ -100,7 +96,7 @@ class ServidorSelect(discord.ui.Select):
             await interaction.response.send_message("❌ Servidor não encontrado.", ephemeral=True)
 
 # ==============================================
-# FUNÇÃO DE LOGS LIMPA E ELEGANTE
+# SISTEMA DE LOGS ESTILO OBSERVADOR (RÁPIDO E FLUIDO)
 # ==============================================
 async def processar_envio_elegante(guild: discord.Guild, log_channel: discord.TextChannel, mensagem: str, operador: str):
     try:
@@ -114,162 +110,87 @@ async def processar_envio_elegante(guild: discord.Guild, log_channel: discord.Te
 
         def gerar_barra(atual, maximo, tamanho=15):
             if maximo == 0:
-                porcentagem = 0
-            else:
-                porcentagem = int((atual / maximo) * tamanho)
-            barra = "█" * porcentagem + "░" * (tamanho - porcentagem)
-            pct = int((atual / maximo) * 100) if maximo > 0 else 0
+                return f"[{'░'*tamanho}] 0%"
+            pct = int((atual / maximo) * 100)
+            preenchido = int((atual / maximo) * tamanho)
+            barra = "█" * preenchido + "░" * (tamanho - preenchido)
             return f"[{barra}] {pct}%"
 
-        # 1. EMBED DE INÍCIO
-        embed_inicio = discord.Embed(
-            title="🚀 Transmissão de Mensagens Iniciada",
-            description="O processo de envio em massa foi iniciado com sucesso.",
-            color=0x3498DB
-        )
-        embed_inicio.add_field(name="🎯 Total de Alvos", value=f"`{total} membros`", inline=True)
-        embed_inicio.add_field(name="👤 Operador", value=f"`{operador}`", inline=True)
-        embed_inicio.set_footer(text="Acompanhe o andamento detalhado abaixo.")
-        embed_inicio.timestamp = discord.utils.utcnow()
-        await log_channel.send(embed=embed_inicio)
-
-        # 2. PAINEL DE CONTROLE EM TEMPO REAL
+        # PAINEL OBSERVADOR INICIAL
         embed_painel = discord.Embed(
-            title="📊 Painel de Status do Envio",
-            color=0xF1C40F
+            title="👁️ [OBSERVADOR] - MONITOR DE TRANSMISSÃO",
+            description="```ini\n[STATUS]: Operando em Modo Turbo Concorrente (Alta Performance)\n```",
+            color=0x00E5FF
         )
-        embed_painel.add_field(name="Status", value="🔄 `Enviando mensagens...`", inline=False)
-        embed_painel.add_field(name="✅ Entregues", value="`0`", inline=True)
-        embed_painel.add_field(name="❌ Falhas", value="`0`", inline=True)
-        embed_painel.add_field(name="📈 Progresso", value=gerar_barra(0, total), inline=False)
-        
+        embed_painel.add_field(name="🎯 Alvos Detectados", value=f"`{total} membros`", inline=True)
+        embed_painel.add_field(name="👤 Operador", value=f"`{operador}`", inline=True)
+        embed_painel.add_field(name="⚡ Velocidade", value="`Otimizada`", inline=True)
+        embed_painel.add_field(name="📊 Progresso", value="`[░░░░░░░░░░░░░░░] 0%` (✅ 0 | ❌ 0)", inline=False)
+        embed_painel.set_footer(text="Central de Inteligência • Sistema de Monitoramento v3.0")
+        embed_painel.timestamp = discord.utils.utcnow()
+
         painel_msg = await log_channel.send(embed=embed_painel)
 
         sucessos = 0
         falhas = 0
         inicio_tempo = time.time()
 
-        # LOOP DE ENVIO
-        for idx, membro in enumerate(membros, start=1):
-            timestamp = discord.utils.utcnow().strftime("%H:%M:%S")
-            
+        # Semáforo para controlar requisições em paralelo com segurança
+        semaphore = asyncio.Semaphore(8)
+
+        async def enviar_dm(membro):
+            nonlocal sucessos, falhas
+            async with semaphore:
+                try:
+                    await membro.send(mensagem)
+                    sucessos += 1
+                except Exception:
+                    falhas += 1
+
+        # Criação de tarefas para disparo simultâneo
+        tarefas = [enviar_dm(membro) for membro in membros]
+        
+        # Execução em lotes rápidos atualizando a tela dinamicamente
+        bloco_tamanho = 12
+        for i in range(0, len(tarefas), bloco_tamanho):
+            lote = tarefas[i:i + bloco_tamanho]
+            await asyncio.gather(*lote)
+            concluidos = min(i + bloco_tamanho, total)
+
+            # Atualiza o painel do observador em tempo real
+            embed_painel.set_field_at(
+                3,
+                name="📊 Progresso",
+                value=f"`{gerar_barra(concluidos, total)}` (✅ {sucessos} | ❌ {falhas})",
+                inline=False
+            )
             try:
-                await membro.send(mensagem)
-                sucessos += 1
-                
-                # LOG DE SUCESSO LIMPO E BONITO
-                log_embed = discord.Embed(
-                    title=f"✅ Mensagem Entregue [{idx}/{total}]",
-                    color=0x2ECC71
-                )
-                log_embed.add_field(name="👤 Destinatário", value=f"{membro.mention} (`{membro.id}`)", inline=False)
-                log_embed.add_field(name="💬 Mensagem", value=f"```text\n{mensagem[:400]}\n```", inline=False)
-                log_embed.add_field(name="🕒 Horário", value=f"`{timestamp}`", inline=True)
-                log_embed.add_field(name="Status", value="`Entregue com Sucesso`", inline=True)
-                
-                if membro.display_avatar:
-                    log_embed.set_thumbnail(url=membro.display_avatar.url)
-                
-                await log_channel.send(embed=log_embed)
-
-            except Exception:
-                falhas += 1
-                
-                # LOG DE FALHA LIMPO
-                err_embed = discord.Embed(
-                    title=f"❌ Falha na Entrega [{idx}/{total}]",
-                    color=0xE74C3C
-                )
-                err_embed.add_field(name="👤 Destinatário", value=f"{membro.mention} (`{membro.id}`)", inline=False)
-                err_embed.add_field(name="⚠️ Motivo", value="```DMs Fechadas ou Usuário Bloqueou o Bot```", inline=False)
-                err_embed.add_field(name="🕒 Horário", value=f"`{timestamp}`", inline=True)
-                
-                await log_channel.send(embed=err_embed)
-
-            # Atualiza o painel a cada 3 envios
-            if idx % 3 == 0 or idx == total:
-                embed_painel.set_field_at(0, name="Status", value="🔄 `Em andamento...`", inline=False)
-                embed_painel.set_field_at(1, name="✅ Entregues", value=f"`{sucessos}`", inline=True)
-                embed_painel.set_field_at(2, name="❌ Falhas", value=f"`{falhas}`", inline=True)
-                embed_painel.set_field_at(3, name="📈 Progresso", value=gerar_barra(idx, total), inline=False)
                 await painel_msg.edit(embed=embed_painel)
+            except:
+                pass
 
-            await asyncio.sleep(0.8)
+            await asyncio.sleep(0.2)
 
         tempo_decorrido = round(time.time() - inicio_tempo, 2)
+        velocidade_media = round(total / tempo_decorrido, 1) if tempo_decorrido > 0 else total
 
-        # Atualiza painel para Concluído
-        embed_painel.color = 0x2ECC71
-        embed_painel.set_field_at(0, name="Status", value="✅ **Transmissão Concluída com Sucesso!**", inline=False)
-        embed_painel.set_field_at(3, name="📈 Progresso", value=gerar_barra(total, total), inline=False)
-        await painel_msg.edit(embed=embed_painel)
-
-        # RELATÓRIO FINAL LIMPO
+        # PAINEL FINAL DE RELATÓRIO DO OBSERVADOR
         embed_fim = discord.Embed(
-            title="🏁 Relatório Final da Transmissão",
-            description="Todas as mensagens foram processadas e enviadas.",
-            color=0x2ECC71
+            title="🏁 [OBSERVADOR] - RELATÓRIO DE MISSÃO CONCLUÍDO",
+            description="```ini\n[DIAGNÓSTICO]: Transmissão finalizada com sucesso absoluto.\n```",
+            color=0x00FF66
         )
-        embed_fim.add_field(name="✅ Sucessos", value=f"`{sucessos}`", inline=True)
-        embed_fim.add_field(name="❌ Falhas", value=f"`{falhas}`", inline=True)
-        embed_fim.add_field(name="📦 Total", value=f"`{total}`", inline=True)
-        embed_fim.add_field(name="⏱️ Tempo Gasto", value=f"`{tempo_decorrido}s`", inline=False)
+        embed_fim.add_field(name="✅ Entregas Bem-Sucedidas", value=f"`{sucessos}`", inline=True)
+        embed_fim.add_field(name="❌ Falhas (DMs Fechadas)", value=f"`{falhas}`", inline=True)
+        embed_fim.add_field(name="📦 Total Processado", value=f"`{total}`", inline=True)
+        embed_fim.add_field(name="⏱️ Tempo Gasto", value=f"`{tempo_decorrido}s`", inline=True)
+        embed_fim.add_field(name="🚀 Performance Média", value=f"`{velocidade_media} msgs/s`", inline=True)
         embed_fim.timestamp = discord.utils.utcnow()
         await log_channel.send(embed=embed_fim)
 
     except Exception as e:
         print(f"Erro no processamento: {e}")
-        await log_channel.send(f"🚨 Ocorreu um erro durante o envio: `{e}`")
-
-# ==============================================
-# COMANDO SLASH: /atualizar (MUDA O CÓDIGO INTEIRO POR ARQUIVO E REINICIA)
-# ==============================================
-@client.tree.command(name="atualizar", description="[DONO] Substitui o código inteiro do bot por um arquivo .py enviado")
-@app_commands.describe(arquivo="Arquivo .py com o novo código completo")
-async def atualizar(interaction: discord.Interaction, arquivo: discord.Attachment):
-    if interaction.user.id != DONO_ID:
-        await interaction.response.send_message("❌ Apenas o desenvolvedor principal pode atualizar o código do bot.", ephemeral=True)
-        return
-
-    if not arquivo.filename.endswith('.py'):
-        await interaction.response.send_message("❌ O arquivo enviado precisa ser um script Python (.py)!", ephemeral=True)
-        return
-
-    await interaction.response.defer(ephemeral=True)
-
-    try:
-        # Baixa o conteúdo do arquivo enviado no chat
-        novo_codigo = await arquivo.read()
-        
-        # Pega o caminho do arquivo Python atual em execução
-        caminho_atual = __file__
-        
-        # Sobrescreve o arquivo atual com o código novo
-        with open(caminho_atual, 'wb') as f:
-            f.write(novo_codigo)
-            
-        await interaction.edit_reply(content="✅ **Código atualizado com sucesso!** Reiniciando o bot para carregar as novas funções...")
-        print(f"⚠️ [ATUALIZAÇÃO GLOBAL] O código foi substituído via Discord por {interaction.user}. Reiniciando...")
-        
-        # Reinicia o bot instantaneamente
-        os.execv(sys.executable, ['python'] + sys.argv)
-        
-    except Exception as e:
-        await interaction.edit_reply(content=f"❌ Erro ao atualizar o código: `{e}`")
-
-# ==============================================
-# COMANDO SLASH: /reiniciar (REINICIA O BOT NA HORA)
-# ==============================================
-@client.tree.command(name="reiniciar", description="[DONO] Reinicia o bot instantaneamente")
-async def reiniciar(interaction: discord.Interaction):
-    if interaction.user.id != DONO_ID:
-        await interaction.response.send_message("❌ Apenas o desenvolvedor principal pode reiniciar o bot.", ephemeral=True)
-        return
-
-    await interaction.response.send_message("🔄 Reiniciando o bot... Volto em alguns segundos!", ephemeral=True)
-    print(f"⚠️ [RESTART] Bot reiniciado por comando via Discord.")
-    
-    os.execv(sys.executable, ['python'] + sys.argv)
+        await log_channel.send(f"🚨 Ocorreu um erro crítico no sistema observador: `{e}`")
 
 # ==============================================
 # COMANDOS SLASH: /autorizar E /remover
@@ -327,7 +248,7 @@ async def enviar(interaction: discord.Interaction, mensagem: str, canal_logs: di
         target_channel = interaction.channel
 
     await interaction.response.send_message(
-        content=f"✅ **Envio iniciado!** Acompanhe os logs detalhados em: {target_channel.mention}",
+        content=f"⚡ **Modo Turbo Ativado!** O Observador iniciou o envio. Acompanhe no canal: {target_channel.mention}",
         ephemeral=True
     )
 
@@ -364,7 +285,7 @@ async def servidores(interaction: discord.Interaction):
         embed.add_field(
             name=f"📌 {g.name}",
             value=f"🆔 `ID: {g.id}`\n👥 `Membros: {g.member_count}`",
-            inline=False
+            inline=False,
         )
 
     view = ServidoresView(client, guilds)
