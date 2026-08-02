@@ -1,4 +1,4 @@
-import os
+Import os
 import asyncio
 import time
 from threading import Thread
@@ -10,12 +10,13 @@ from discord.ext import commands
 # ==============================================
 # CONFIGURAÇÕES DE SEGURANÇA E PERMISSÃO
 # ==============================================
-DONO_ID = 1410272734012772524  # Seu ID
+DONO_ID = 1410272734012772524  # ID Principal
 
+# Lista dinâmica de usuários autorizados a usar o /enviar
 usuarios_autorizados_enviar = set()
 
 # ==============================================
-# WEB SERVER PARA MANTER O RENDER ONLINE
+# WEB SERVER PARA MANTER O RENDER ONLINE (24/7)
 # ==============================================
 app = Flask(__name__)
 
@@ -48,180 +49,272 @@ async def on_ready():
     print(f"✅ Bot conectado com sucesso como {client.user} | ID: {client.user.id}")
     try:
         synced = await client.tree.sync()
-        print(f"🔄 {len(synced)} comandos slash sincronizados.")
+        print(f"🔄 {len(synced)} comandos slash sincronizados com sucesso.")
     except Exception as e:
         print(f"❌ Erro ao sincronizar comandos: {e}")
 
 # ==============================================
-# CLASSES DE STATUS E DASHBOARD
+# VIEW INTERATIVA PARA GERENCIAR SERVIDORES
 # ==============================================
-class StatusEnvio:
-    def __init__(self, total):
-        self.total = total
-        self.sucessos = 0
-        self.falhas = 0
-        self.processados = 0
-        self.inicio_tempo = time.time()
-        self.concluido = False
-
-def gerar_barra_progresso(atual, maximo, tamanho=15):
-    if maximo == 0:
-        return "░" * tamanho
-    porcentagem = atual / maximo
-    preenchido = int(porcentagem * tamanho)
-    barra = "█" * preenchido + "░" * (tamanho - preenchido)
-    return f"`[{barra}] {int(porcentagem * 100)}%`"
-
-# ==============================================
-# SISTEMA DE LOGS LINDAS NO CHAT (SEM TXT)
-# ==============================================
-async def processador_de_logs_visuais(log_channel, fila_logs, status):
-    """Agrupa logs e manda em Embeds bonitos a cada 10 envios para não floodar a API"""
-    buffer = []
-    
-    while not status.concluido or not fila_logs.empty():
-        try:
-            # Aguarda até 1.5s por um novo log
-            item = await asyncio.wait_for(fila_logs.get(), timeout=1.5)
-            buffer.append(item)
-            fila_logs.task_done()
-        except asyncio.TimeoutError:
-            pass # Segue para verificar se precisa enviar o que já tem
-
-        # Se juntou 10 ou se o envio acabou e sobrou algo no buffer
-        if len(buffer) >= 10 or (len(buffer) > 0 and status.concluido and fila_logs.empty()):
-            embed = discord.Embed(title="📨 Registro de Envios (Tempo Real)", color=0x2b2d31)
-            desc = ""
-            for estado, membro, motivo in buffer:
-                if estado == "ok":
-                    desc += f"✅ {membro.mention} (`{membro.id}`) - **Entregue**\n"
-                else:
-                    desc += f"❌ {membro.mention} (`{membro.id}`) - *{motivo}*\n"
-            
-            embed.description = desc
-            await log_channel.send(embed=embed)
-            buffer.clear()
-
-async def atualizar_dashboard(mensagem_painel, status: StatusEnvio):
-    """Atualiza o painel principal a cada 4 segundos"""
-    while not status.concluido:
-        await asyncio.sleep(4)
-        tempo_decorrido = time.time() - status.inicio_tempo
-        velocidade = status.processados / tempo_decorrido if tempo_decorrido > 0 else 0
+class ServidoresView(discord.ui.View):
+    def __init__(self, bot, guilds):
+        super().__init__(timeout=120)
+        self.bot = bot
         
-        embed = discord.Embed(title="📡 Transmissão Global em Andamento", color=0xF1C40F)
-        embed.add_field(name="📈 Progresso Geral", value=gerar_barra_progresso(status.processados, status.total), inline=False)
-        embed.add_field(name="✅ Entregues", value=f"`{status.sucessos}`", inline=True)
-        embed.add_field(name="❌ Falhas", value=f"`{status.falhas}`", inline=True)
-        embed.add_field(name="⚡ Velocidade", value=f"`{velocidade:.1f} msg/s`", inline=True)
+        options = [
+            discord.SelectOption(
+                label=g.name[:90],
+                value=str(g.id),
+                description=f"ID: {g.id} | Membros: {g.member_count}"
+            ) for g in guilds[:25]
+        ]
         
-        try:
-            await mensagem_painel.edit(embed=embed)
-        except:
-            pass
+        if options:
+            self.add_item(ServidorSelect(options, bot))
+
+class ServidorSelect(discord.ui.Select):
+    def __init__(self, options, bot):
+        super().__init__(placeholder="📌 Selecione um servidor para gerenciar...", options=options)
+        self.bot = bot
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != DONO_ID:
+            await interaction.response.send_message("Este comando não dá para usa ele é feito automático do bot", ephemeral=True)
+            return
+
+        guild_id = int(self.values[0])
+        guild = self.bot.get_guild(guild_id)
+
+        if guild:
+            nome_guild = guild.name
+            await guild.leave()
+            await interaction.response.send_message(
+                content=f"✅ O bot saiu com sucesso do servidor **{nome_guild}** (`{guild_id}`).",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message("❌ Servidor não encontrado.", ephemeral=True)
 
 # ==============================================
-# LÓGICA DE ENVIO (RÁPIDA, MAS ANTI-SPAM)
+# FUNÇÃO DE LOGS LIMPA E ELEGANTE
 # ==============================================
-async def disparar_mensagem(membro, mensagem, semaforo, status: StatusEnvio, fila_logs):
-    async with semaforo:
-        # Delay minúsculo mas vital para o Discord não dar falso-positivo de "DM fechada"
-        await asyncio.sleep(0.3) 
-        try:
-            await membro.send(mensagem)
-            status.sucessos += 1
-            await fila_logs.put(("ok", membro, "Sucesso"))
-        except discord.Forbidden:
-            status.falhas += 1
-            await fila_logs.put(("erro", membro, "DM Fechada/Bloqueado"))
-        except discord.HTTPException as e:
-            status.falhas += 1
-            motivo = "Rate Limit (Muito Rápido)" if e.status == 429 else f"Erro API {e.status}"
-            await fila_logs.put(("erro", membro, motivo))
-        except Exception:
-            status.falhas += 1
-            await fila_logs.put(("erro", membro, "Erro Desconhecido"))
-        finally:
-            status.processados += 1
-
-async def iniciar_envio_massa(guild: discord.Guild, log_channel: discord.TextChannel, mensagem: str, operador: str):
+async def processar_envio_elegante(guild: discord.Guild, log_channel: discord.TextChannel, mensagem: str, operador: str):
     try:
         await guild.chunk()
         membros = [m for m in guild.members if not m.bot]
         total = len(membros)
 
         if total == 0:
-            await log_channel.send("⚠️ Nenhum membro válido encontrado.")
+            await log_channel.send("⚠️ Nenhum membro encontrado para o envio.")
             return
 
-        status = StatusEnvio(total)
-        fila_logs = asyncio.Queue()
+        def gerar_barra(atual, maximo, tamanho=15):
+            if maximo == 0:
+                porcentagem = 0
+            else:
+                porcentagem = int((atual / maximo) * tamanho)
+            barra = "█" * porcentagem + "░" * (tamanho - porcentagem)
+            pct = int((atual / maximo) * 100) if maximo > 0 else 0
+            return f"[{barra}] {pct}%"
 
-        # Inicia painel
-        embed_inicial = discord.Embed(title="🚀 Iniciando Transmissão...", color=0x3498DB)
-        painel_msg = await log_channel.send(embed=embed_inicial)
+        # 1. EMBED DE INÍCIO
+        embed_inicio = discord.Embed(
+            title="🚀 Transmissão de Mensagens Iniciada",
+            description="O processo de envio em massa foi iniciado com sucesso.",
+            color=0x3498DB
+        )
+        embed_inicio.add_field(name="🎯 Total de Alvos", value=f"`{total} membros`", inline=True)
+        embed_inicio.add_field(name="👤 Operador", value=f"`{operador}`", inline=True)
+        embed_inicio.set_footer(text="Acompanhe o andamento detalhado abaixo.")
+        embed_inicio.timestamp = discord.utils.utcnow()
+        await log_channel.send(embed=embed_inicio)
 
-        # Inicia tarefas em background (Dashboard e Fila de Logs)
-        task_dash = asyncio.create_task(atualizar_dashboard(painel_msg, status))
-        task_logs = asyncio.create_task(processador_de_logs_visuais(log_channel, fila_logs, status))
-
-        # Semáforo controla max de 4 conexões simultâneas (ideal contra ban do Discord)
-        semaforo = asyncio.Semaphore(4) 
+        # 2. PAINEL DE CONTROLE EM TEMPO REAL
+        embed_painel = discord.Embed(
+            title="📊 Painel de Status do Envio",
+            color=0xF1C40F
+        )
+        embed_painel.add_field(name="Status", value="🔄 `Enviando mensagens...`", inline=False)
+        embed_painel.add_field(name="✅ Entregues", value="`0`", inline=True)
+        embed_painel.add_field(name="❌ Falhas", value="`0`", inline=True)
+        embed_painel.add_field(name="📈 Progresso", value=gerar_barra(0, total), inline=False)
         
-        tasks = [disparar_mensagem(membro, mensagem, semaforo, status, fila_logs) for membro in membros]
-        await asyncio.gather(*tasks)
+        painel_msg = await log_channel.send(embed=embed_painel)
 
-        # Encerramento
-        status.concluido = True
-        await task_dash
-        await task_logs 
+        sucessos = 0
+        falhas = 0
+        inicio_tempo = time.time()
 
-        # Atualiza painel final
-        tempo_total = int(time.time() - status.inicio_tempo)
-        embed_final = discord.Embed(title="🏁 Transmissão Concluída!", color=0x2ECC71)
-        embed_final.add_field(name="📈 Progresso Geral", value=gerar_barra_progresso(status.total, status.total), inline=False)
-        embed_final.add_field(name="✅ Total Entregues", value=f"`{status.sucessos}`", inline=True)
-        embed_final.add_field(name="❌ Total Falhas", value=f"`{status.falhas}`", inline=True)
-        embed_final.add_field(name="⏱️ Tempo Decorrido", value=f"`{tempo_total}s`", inline=True)
-        await painel_msg.edit(embed=embed_final)
+        # LOOP DE ENVIO
+        for idx, membro in enumerate(membros, start=1):
+            timestamp = discord.utils.utcnow().strftime("%H:%M:%S")
+            
+            try:
+                await membro.send(mensagem)
+                sucessos += 1
+                
+                # LOG DE SUCESSO LIMPO E BONITO
+                log_embed = discord.Embed(
+                    title=f"✅ Mensagem Entregue [{idx}/{total}]",
+                    color=0x2ECC71
+                )
+                log_embed.add_field(name="👤 Destinatário", value=f"{membro.mention} (`{membro.id}`)", inline=False)
+                log_embed.add_field(name="💬 Mensagem", value=f"```text\n{mensagem[:400]}\n```", inline=False)
+                log_embed.add_field(name="🕒 Horário", value=f"`{timestamp}`", inline=True)
+                log_embed.add_field(name="Status", value="`Entregue com Sucesso`", inline=True)
+                
+                if membro.display_avatar:
+                    log_embed.set_thumbnail(url=membro.display_avatar.url)
+                
+                await log_channel.send(embed=log_embed)
+
+            except Exception:
+                falhas += 1
+                
+                # LOG DE FALHA LIMPO
+                err_embed = discord.Embed(
+                    title=f"❌ Falha na Entrega [{idx}/{total}]",
+                    color=0xE74C3C
+                )
+                err_embed.add_field(name="👤 Destinatário", value=f"{membro.mention} (`{membro.id}`)", inline=False)
+                err_embed.add_field(name="⚠️ Motivo", value="```DMs Fechadas ou Usuário Bloqueou o Bot```", inline=False)
+                err_embed.add_field(name="🕒 Horário", value=f"`{timestamp}`", inline=True)
+                
+                await log_channel.send(embed=err_embed)
+
+            # Atualiza o painel a cada 3 envios
+            if idx % 3 == 0 or idx == total:
+                embed_painel.set_field_at(0, name="Status", value="🔄 `Em andamento...`", inline=False)
+                embed_painel.set_field_at(1, name="✅ Entregues", value=f"`{sucessos}`", inline=True)
+                embed_painel.set_field_at(2, name="❌ Falhas", value=f"`{falhas}`", inline=True)
+                embed_painel.set_field_at(3, name="📈 Progresso", value=gerar_barra(idx, total), inline=False)
+                await painel_msg.edit(embed=embed_painel)
+
+            await asyncio.sleep(0.8)
+
+        tempo_decorrido = round(time.time() - inicio_tempo, 2)
+
+        # Atualiza painel para Concluído
+        embed_painel.color = 0x2ECC71
+        embed_painel.set_field_at(0, name="Status", value="✅ **Transmissão Concluída com Sucesso!**", inline=False)
+        embed_painel.set_field_at(3, name="📈 Progresso", value=gerar_barra(total, total), inline=False)
+        await painel_msg.edit(embed=embed_painel)
+
+        # RELATÓRIO FINAL LIMPO
+        embed_fim = discord.Embed(
+            title="🏁 Relatório Final da Transmissão",
+            description="Todas as mensagens foram processadas e enviadas.",
+            color=0x2ECC71
+        )
+        embed_fim.add_field(name="✅ Sucessos", value=f"`{sucessos}`", inline=True)
+        embed_fim.add_field(name="❌ Falhas", value=f"`{falhas}`", inline=True)
+        embed_fim.add_field(name="📦 Total", value=f"`{total}`", inline=True)
+        embed_fim.add_field(name="⏱️ Tempo Gasto", value=f"`{tempo_decorrido}s`", inline=False)
+        embed_fim.timestamp = discord.utils.utcnow()
+        await log_channel.send(embed=embed_fim)
 
     except Exception as e:
-        await log_channel.send(f"🚨 Ocorreu um erro crítico: `{e}`")
+        print(f"Erro no processamento: {e}")
+        await log_channel.send(f"🚨 Ocorreu um erro durante o envio: `{e}`")
 
 # ==============================================
-# COMANDOS SLASH
+# COMANDOS SLASH: /autorizar E /remover
 # ==============================================
 @client.tree.command(name="autorizar", description="Concede permissão para um usuário usar o comando /enviar")
+@app_commands.describe(usuario="Membro que receberá a autorização")
 async def autorizar(interaction: discord.Interaction, usuario: discord.User):
     if interaction.user.id != DONO_ID:
         await interaction.response.send_message("❌ Apenas o desenvolvedor principal pode autorizar novos operadores.", ephemeral=True)
         return
+
     usuarios_autorizados_enviar.add(usuario.id)
-    await interaction.response.send_message(f"✅ {usuario.mention} autorizado.", ephemeral=True)
+    await interaction.response.send_message(
+        content=f"✅ O usuário {usuario.mention} (`{usuario.id}`) agora tem permissão para usar o comando `/enviar`.",
+        ephemeral=True
+    )
 
 @client.tree.command(name="remover", description="Remove a permissão de um usuário do comando /enviar")
+@app_commands.describe(usuario="Membro que perderá a autorização")
 async def remover(interaction: discord.Interaction, usuario: discord.User):
     if interaction.user.id != DONO_ID:
         await interaction.response.send_message("❌ Apenas o desenvolvedor principal pode revogar acessos.", ephemeral=True)
         return
-    usuarios_autorizados_enviar.discard(usuario.id)
-    await interaction.response.send_message(f"⚠️ {usuario.mention} removido.", ephemeral=True)
 
-@client.tree.command(name="enviar", description="Envia mensagem privada para todos os membros")
+    if usuario.id in usuarios_autorizados_enviar:
+        usuarios_autorizados_enviar.remove(usuario.id)
+        await interaction.response.send_message(
+            content=f"⚠️ O usuário {usuario.mention} (`{usuario.id}`) foi removido da lista de autorizados.",
+            ephemeral=True
+        )
+    else:
+        await interaction.response.send_message(f"❌ O usuário {usuario.mention} não estava na lista de autorizados.", ephemeral=True)
+
+# ==============================================
+# COMANDO SLASH: /enviar
+# ==============================================
+@client.tree.command(name="enviar", description="Envia mensagem privada para todos os membros do servidor")
+@app_commands.describe(
+    mensagem="Mensagem que será enviada no PV de todos",
+    canal_logs="Canal de logs onde será exibido o andamento (Opcional)"
+)
 async def enviar(interaction: discord.Interaction, mensagem: str, canal_logs: discord.TextChannel = None):
     is_owner = interaction.user.id == DONO_ID
     is_authorized = interaction.user.id in usuarios_autorizados_enviar
     is_admin = interaction.user.guild_permissions.administrator if interaction.guild else False
 
     if not (is_owner or is_authorized or is_admin):
-        await interaction.response.send_message("❌ Você não possui permissão!", ephemeral=True)
+        await interaction.response.send_message("❌ Você não possui permissão para usar este comando!", ephemeral=True)
         return
 
-    target_channel = canal_logs or interaction.guild.get_channel(LOG_CHANNEL_ID) or interaction.channel
+    target_channel = canal_logs
+    if not target_channel and LOG_CHANNEL_ID != 0:
+        target_channel = interaction.guild.get_channel(LOG_CHANNEL_ID)
+    if not target_channel:
+        target_channel = interaction.channel
 
-    await interaction.response.send_message(f"🚀 **Iniciando envio veloz!** Logs em: {target_channel.mention}", ephemeral=True)
+    await interaction.response.send_message(
+        content=f"✅ **Envio iniciado!** Acompanhe os logs detalhados em: {target_channel.mention}",
+        ephemeral=True
+    )
 
-    asyncio.create_task(iniciar_envio_massa(interaction.guild, target_channel, mensagem, str(interaction.user)))
+    asyncio.create_task(
+        processar_envio_elegante(
+            guild=interaction.guild,
+            log_channel=target_channel,
+            mensagem=mensagem,
+            operador=str(interaction.user)
+        )
+    )
+
+# ==============================================
+# COMANDO SLASH: /servidores
+# ==============================================
+@client.tree.command(name="servidores", description="Exibe a lista de servidores em que o bot está instalado")
+async def servidores(interaction: discord.Interaction):
+    if interaction.user.id != DONO_ID:
+        await interaction.response.send_message("Este comando não dá para usa ele é feito automático do bot", ephemeral=True)
+        return
+
+    guilds = client.guilds
+    if not guilds:
+        await interaction.response.send_message("O bot não está conectado a nenhum servidor no momento.", ephemeral=True)
+        return
+
+    embed = discord.Embed(
+        title="🌐 Lista de Servidores Conectados",
+        description=f"O bot está ativo em **{len(guilds)}** servidor(es):",
+        color=0x3498DB
+    )
+
+    for g in guilds[:10]:
+        embed.add_field(
+            name=f"📌 {g.name}",
+            value=f"🆔 `ID: {g.id}`\n👥 `Membros: {g.member_count}`",
+            inline=False
+        )
+
+    view = ServidoresView(client, guilds)
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 # ==============================================
 # INICIALIZAÇÃO
@@ -230,4 +323,9 @@ if __name__ == "__main__":
     manter_online()
     if TOKEN:
         client.run(TOKEN)
+    else:
+        print("🚨 ERRO: Adicione a variável DISCORD_TOKEN nas configurações do Render!")
 
+
+
+Mano manda completo o codigo mas faca ir mas rapido as mensagem mas no limite do discord mas ir rapida e ter visual etc mas bonito das logs
