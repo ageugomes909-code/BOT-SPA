@@ -79,7 +79,7 @@ class ServidorSelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != DONO_ID:
-            await interaction.response.send_message("Este comando não dá para usa ele é feito automático do bot", ephemeral=True)
+            await interaction.response.send_message("Este comando não dá para usar, ele é automático do bot.", ephemeral=True)
             return
 
         guild_id = int(self.values[0])
@@ -153,7 +153,7 @@ async def processar_envio_elegante(guild: discord.Guild, log_channel: discord.Te
                 await membro.send(mensagem)
                 sucessos += 1
                 
-                # LOG DE SUCESSO LIMPO E BONITO
+                # LOG DE SUCESSO
                 log_embed = discord.Embed(
                     title=f"✅ Mensagem Entregue [{idx}/{total}]",
                     color=0x2ECC71
@@ -168,10 +168,9 @@ async def processar_envio_elegante(guild: discord.Guild, log_channel: discord.Te
                 
                 await log_channel.send(embed=log_embed)
 
-            except Exception:
+            except discord.Forbidden:
                 falhas += 1
-                
-                # LOG DE FALHA LIMPO
+                # DM realmente fechada ou usuário bloqueou
                 err_embed = discord.Embed(
                     title=f"❌ Falha na Entrega [{idx}/{total}]",
                     color=0xE74C3C
@@ -182,7 +181,33 @@ async def processar_envio_elegante(guild: discord.Guild, log_channel: discord.Te
                 
                 await log_channel.send(embed=err_embed)
 
-            # Atualiza o painel a cada 3 envios
+            except discord.HTTPException as e:
+                falhas += 1
+                # Erro de Rate Limit ou bloqueio do próprio Discord
+                err_embed = discord.Embed(
+                    title=f"⚠️ Erro de API/Rate Limit [{idx}/{total}]",
+                    color=0xE67E22
+                )
+                err_embed.add_field(name="👤 Destinatário", value=f"{membro.mention} (`{membro.id}`)", inline=False)
+                err_embed.add_field(name="⚠️ Motivo Real", value=f"```text\nErro Discord {e.status}: {e.text}\n```", inline=False)
+                err_embed.add_field(name="🕒 Horário", value=f"`{timestamp}`", inline=True)
+                
+                await log_channel.send(embed=err_embed)
+
+            except Exception as e:
+                falhas += 1
+                # Outro erro genérico
+                err_embed = discord.Embed(
+                    title=f"🚨 Erro Inesperado [{idx}/{total}]",
+                    color=0x95A5A6
+                )
+                err_embed.add_field(name="👤 Destinatário", value=f"{membro.mention} (`{membro.id}`)", inline=False)
+                err_embed.add_field(name="⚠️ Motivo Real", value=f"```text\n{type(e).__name__}: {e}\n```", inline=False)
+                err_embed.add_field(name="🕒 Horário", value=f"`{timestamp}`", inline=True)
+                
+                await log_channel.send(embed=err_embed)
+
+            # Atualiza o painel principal a cada 3 envios
             if idx % 3 == 0 or idx == total:
                 embed_painel.set_field_at(0, name="Status", value="🔄 `Em andamento...`", inline=False)
                 embed_painel.set_field_at(1, name="✅ Entregues", value=f"`{sucessos}`", inline=True)
@@ -190,7 +215,8 @@ async def processar_envio_elegante(guild: discord.Guild, log_channel: discord.Te
                 embed_painel.set_field_at(3, name="📈 Progresso", value=gerar_barra(idx, total), inline=False)
                 await painel_msg.edit(embed=embed_painel)
 
-            await asyncio.sleep(0.8)
+            # Pausa de 1.5s entre envios para não sofrer bloqueio da API por SPAM
+            await asyncio.sleep(1.5)
 
         tempo_decorrido = round(time.time() - inicio_tempo, 2)
 
@@ -214,8 +240,8 @@ async def processar_envio_elegante(guild: discord.Guild, log_channel: discord.Te
         await log_channel.send(embed=embed_fim)
 
     except Exception as e:
-        print(f"Erro no processamento: {e}")
-        await log_channel.send(f"🚨 Ocorreu um erro durante o envio: `{e}`")
+        print(f"Erro no processamento geral: {e}")
+        await log_channel.send(f"🚨 Ocorreu um erro durante o processamento: `{e}`")
 
 # ==============================================
 # COMANDOS SLASH: /autorizar E /remover
@@ -292,7 +318,7 @@ async def enviar(interaction: discord.Interaction, mensagem: str, canal_logs: di
 @client.tree.command(name="servidores", description="Exibe a lista de servidores em que o bot está instalado")
 async def servidores(interaction: discord.Interaction):
     if interaction.user.id != DONO_ID:
-        await interaction.response.send_message("Este comando não dá para usa ele é feito automático do bot", ephemeral=True)
+        await interaction.response.send_message("Este comando não dá para usar, ele é automático do bot.", ephemeral=True)
         return
 
     guilds = client.guilds
@@ -325,4 +351,3 @@ if __name__ == "__main__":
         client.run(TOKEN)
     else:
         print("🚨 ERRO: Adicione a variável DISCORD_TOKEN nas configurações do Render!")
-
