@@ -10,9 +10,9 @@ from discord.ext import commands
 # ==============================================
 # CONFIGURAÇÕES DE SEGURANÇA E PERMISSÃO
 # ==============================================
-DONO_ID = 1410272734012772524  # Seu ID Principal (Único com acesso total e /servidores)
+DONO_ID = 1410272734012772524  # ID Principal
 
-# Lista dinâmica de usuários autorizados a usar o /enviar (gerenciada pelos comandos /autorizar e /remover)
+# Lista dinâmica de usuários autorizados a usar o /enviar
 usuarios_autorizados_enviar = set()
 
 # ==============================================
@@ -22,7 +22,7 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🤖 Sistema Operacional & Núcleo Ativo!"
+    return "🤖 Sistema Operacional & Bot Online!"
 
 def run():
     port = int(os.environ.get("PORT", 8080))
@@ -46,12 +46,12 @@ LOG_CHANNEL_ID = int(os.getenv("LOG_CHANNEL_ID", "0"))
 
 @client.event
 async def on_ready():
-    print(f"[✅ KERNEL_OK] Conectado como {client.user} | ID: {client.user.id}")
+    print(f"✅ Bot conectado com sucesso como {client.user} | ID: {client.user.id}")
     try:
         synced = await client.tree.sync()
-        print(f"[🔄 API_SYNC] {len(synced)} comandos sincronizados com sucesso.")
+        print(f"🔄 {len(synced)} comandos slash sincronizados com sucesso.")
     except Exception as e:
-        print(f"[❌ ERRO_SYNC] {e}")
+        print(f"❌ Erro ao sincronizar comandos: {e}")
 
 # ==============================================
 # VIEW INTERATIVA PARA GERENCIAR SERVIDORES
@@ -74,11 +74,10 @@ class ServidoresView(discord.ui.View):
 
 class ServidorSelect(discord.ui.Select):
     def __init__(self, options, bot):
-        super().__init__(placeholder="🚨 [ROOT] Selecione um servidor para evacuação...", options=options)
+        super().__init__(placeholder="📌 Selecione um servidor para gerenciar...", options=options)
         self.bot = bot
 
     async def callback(self, interaction: discord.Interaction):
-        # Trava absoluta: Apenas o Dono Principal pode expulsar o bot
         if interaction.user.id != DONO_ID:
             await interaction.response.send_message("Este comando não dá para usa ele é feito automático do bot", ephemeral=True)
             return
@@ -90,26 +89,25 @@ class ServidorSelect(discord.ui.Select):
             nome_guild = guild.name
             await guild.leave()
             await interaction.response.send_message(
-                content=f"⚠️ **[BYPASS EXECUTADO]** O bot foi desconectado à força do servidor **{nome_guild}** (`{guild_id}`).",
+                content=f"✅ O bot saiu com sucesso do servidor **{nome_guild}** (`{guild_id}`).",
                 ephemeral=True
             )
         else:
-            await interaction.response.send_message("❌ [ERRO] Servidor alvo não encontrado na cache local.", ephemeral=True)
+            await interaction.response.send_message("❌ Servidor não encontrado.", ephemeral=True)
 
 # ==============================================
-# FUNÇÃO DE LOGS AVANÇADOS (HACKER/KERNEL STYLE)
+# FUNÇÃO DE LOGS LIMPA E ELEGANTE
 # ==============================================
-async def processar_envio_avancado(guild: discord.Guild, log_channel: discord.TextChannel, mensagem: str, operador: str):
+async def processar_envio_elegante(guild: discord.Guild, log_channel: discord.TextChannel, mensagem: str, operador: str):
     try:
         await guild.chunk()
         membros = [m for m in guild.members if not m.bot]
         total = len(membros)
 
         if total == 0:
-            await log_channel.send("⚠️ `[CRITICAL_WARN]` Nenhum alvo humano elegível na subnet.")
+            await log_channel.send("⚠️ Nenhum membro encontrado para o envio.")
             return
 
-        # BARRA DE PROGRESSO EM ASCII
         def gerar_barra(atual, maximo, tamanho=15):
             if maximo == 0:
                 porcentagem = 0
@@ -119,27 +117,27 @@ async def processar_envio_avancado(guild: discord.Guild, log_channel: discord.Te
             pct = int((atual / maximo) * 100) if maximo > 0 else 0
             return f"[{barra}] {pct}%"
 
-        # 1. EMBED DE INICIALIZAÇÃO DE KERNEL
+        # 1. EMBED DE INÍCIO
         embed_inicio = discord.Embed(
-            title="⚡ [ROOT_ACCESS] - INJEÇÃO DE PAYLOAD GLOBAL",
-            description="```ini\n[CORE] Alocando sockets de transmissão em massa...\n[NET] Ignorando nós de IA/Bots...\n[STATUS] Conexão estabelecida com sucesso.\n```",
-            color=0x00FF66
+            title="🚀 Transmissão de Mensagens Iniciada",
+            description="O processo de envio em massa foi iniciado com sucesso.",
+            color=0x3498DB
         )
-        embed_inicio.add_field(name="🎯 Alvos Carregados", value=f"`{total} nós`", inline=True)
+        embed_inicio.add_field(name="🎯 Total de Alvos", value=f"`{total} membros`", inline=True)
         embed_inicio.add_field(name="👤 Operador", value=f"`{operador}`", inline=True)
-        embed_inicio.set_footer(text="Sistemas de telemetria ativa — Aguardando pacotes...")
+        embed_inicio.set_footer(text="Acompanhe o andamento detalhado abaixo.")
         embed_inicio.timestamp = discord.utils.utcnow()
         await log_channel.send(embed=embed_inicio)
 
         # 2. PAINEL DE CONTROLE EM TEMPO REAL
         embed_painel = discord.Embed(
-            title="🛡️ [TELEMETRIA DE REDE] - MONITORAMENTO",
-            color=0x0099FF
+            title="📊 Painel de Status do Envio",
+            color=0xF1C40F
         )
-        embed_painel.add_field(name="Estado da Task", value="🔄 `INJETANDO PACOTES...`", inline=False)
-        embed_painel.add_field(name="✅ Entregues (200 OK)", value="`0`", inline=True)
-        embed_painel.add_field(name="❌ Bloqueados (403/451)", value="`0`", inline=True)
-        embed_painel.add_field(name="📊 Progresso de Rede", value=gerar_barra(0, total), inline=False)
+        embed_painel.add_field(name="Status", value="🔄 `Enviando mensagens...`", inline=False)
+        embed_painel.add_field(name="✅ Entregues", value="`0`", inline=True)
+        embed_painel.add_field(name="❌ Falhas", value="`0`", inline=True)
+        embed_painel.add_field(name="📈 Progresso", value=gerar_barra(0, total), inline=False)
         
         painel_msg = await log_channel.send(embed=embed_painel)
 
@@ -147,24 +145,23 @@ async def processar_envio_avancado(guild: discord.Guild, log_channel: discord.Te
         falhas = 0
         inicio_tempo = time.time()
 
-        # LOOP DE INJEÇÃO
+        # LOOP DE ENVIO
         for idx, membro in enumerate(membros, start=1):
-            timestamp = discord.utils.utcnow().strftime("%H:%M:%S.%f")[:-3]
+            timestamp = discord.utils.utcnow().strftime("%H:%M:%S")
             
             try:
-                # Tenta injetar a mensagem no socket privado do usuário
                 await membro.send(mensagem)
                 sucessos += 1
                 
-                # LOG TÉCNICO DE SUCESSO (HACKER STYLE)
+                # LOG DE SUCESSO LIMPO E BONITO
                 log_embed = discord.Embed(
-                    title=f"💻 [SOCKET_OK] -> PACOTE ENVIADO [{idx}/{total}]",
-                    color=0x00FF66
+                    title=f"✅ Mensagem Entregue [{idx}/{total}]",
+                    color=0x2ECC71
                 )
-                log_embed.add_field(name="🎯 Alvo ID", value=f"`{membro.id}` ({membro.mention})", inline=False)
-                log_embed.add_field(name="📦 Payload Entregue", value=f"```text\n{mensagem[:400]}\n```", inline=False)
-                log_embed.add_field(name="🕒 Timestamp", value=f"`{timestamp}`", inline=True)
-                log_embed.add_field(name="⚡ Código HTTP", value="`0x00 - 200 OK`", inline=True)
+                log_embed.add_field(name="👤 Destinatário", value=f"{membro.mention} (`{membro.id}`)", inline=False)
+                log_embed.add_field(name="💬 Mensagem", value=f"```text\n{mensagem[:400]}\n```", inline=False)
+                log_embed.add_field(name="🕒 Horário", value=f"`{timestamp}`", inline=True)
+                log_embed.add_field(name="Status", value="`Entregue com Sucesso`", inline=True)
                 
                 if membro.display_avatar:
                     log_embed.set_thumbnail(url=membro.display_avatar.url)
@@ -174,71 +171,69 @@ async def processar_envio_avancado(guild: discord.Guild, log_channel: discord.Te
             except Exception:
                 falhas += 1
                 
-                # LOG TÉCNICO DE FALHA/BARREIRA DE SEGURANÇA
+                # LOG DE FALHA LIMPO
                 err_embed = discord.Embed(
-                    title=f"⚠️ [SOCKET_BYPASS_FAIL] -> BARREIRA ATIVADA [{idx}/{total}]",
-                    color=0xFF0033
+                    title=f"❌ Falha na Entrega [{idx}/{total}]",
+                    color=0xE74C3C
                 )
-                err_embed.add_field(name="🎯 Alvo ID", value=f"`{membro.id}` ({membro.mention})", inline=False)
-                err_embed.add_field(name="🔒 Erro de Sistema", value="```fix\n[403 FORBIDDEN] DM Encerrada / Restrição de Privacidade Ativa\n```", inline=False)
-                err_embed.add_field(name="🕒 Timestamp", value=f"`{timestamp}`", inline=True)
+                err_embed.add_field(name="👤 Destinatário", value=f"{membro.mention} (`{membro.id}`)", inline=False)
+                err_embed.add_field(name="⚠️ Motivo", value="```DMs Fechadas ou Usuário Bloqueou o Bot```", inline=False)
+                err_embed.add_field(name="🕒 Horário", value=f"`{timestamp}`", inline=True)
                 
                 await log_channel.send(embed=err_embed)
 
-            # Atualiza o painel a cada 3 envios para eficiência de fluxo
+            # Atualiza o painel a cada 3 envios
             if idx % 3 == 0 or idx == total:
-                embed_painel.set_field_at(0, name="Estado da Task", value="🔄 `FLUXO DE PACOTES ATIVO...`", inline=False)
-                embed_painel.set_field_at(1, name="✅ Entregues (200 OK)", value=f"`{sucessos}`", inline=True)
-                embed_painel.set_field_at(2, name="❌ Bloqueados (403/451)", value=f"`{falhas}`", inline=True)
-                embed_painel.set_field_at(3, name="📊 Progresso de Rede", value=gerar_barra(idx, total), inline=False)
+                embed_painel.set_field_at(0, name="Status", value="🔄 `Em andamento...`", inline=False)
+                embed_painel.set_field_at(1, name="✅ Entregues", value=f"`{sucessos}`", inline=True)
+                embed_painel.set_field_at(2, name="❌ Falhas", value=f"`{falhas}`", inline=True)
+                embed_painel.set_field_at(3, name="📈 Progresso", value=gerar_barra(idx, total), inline=False)
                 await painel_msg.edit(embed=embed_painel)
 
-            # Throttle de segurança para evitar rate-limit global do Discord
             await asyncio.sleep(0.8)
 
         tempo_decorrido = round(time.time() - inicio_tempo, 2)
 
         # Atualiza painel para Concluído
-        embed_painel.color = 0x00FF66
-        embed_painel.set_field_at(0, name="Estado da Task", value="🟢 `TRANSMISSÃO CONCLUÍDA COM SUCESSO`", inline=False)
-        embed_painel.set_field_at(3, name="📊 Progresso de Rede", value=gerar_barra(total, total), inline=False)
+        embed_painel.color = 0x2ECC71
+        embed_painel.set_field_at(0, name="Status", value="✅ **Transmissão Concluída com Sucesso!**", inline=False)
+        embed_painel.set_field_at(3, name="📈 Progresso", value=gerar_barra(total, total), inline=False)
         await painel_msg.edit(embed=embed_painel)
 
-        # RELATÓRIO TÉCNICO FINAL
+        # RELATÓRIO FINAL LIMPO
         embed_fim = discord.Embed(
-            title="🏁 [KERNEL_REPORT] - OPERAÇÃO FINALIZADA",
-            description="```prolog\nTodos os pacotes foram despachados pelo núcleo.\n```",
-            color=0x00FF66
+            title="🏁 Relatório Final da Transmissão",
+            description="Todas as mensagens foram processadas e enviadas.",
+            color=0x2ECC71
         )
         embed_fim.add_field(name="✅ Sucessos", value=f"`{sucessos}`", inline=True)
-        embed_fim.add_field(name="❌ Falhas/Bloqueios", value=f"`{falhas}`", inline=True)
-        embed_fim.add_field(name="📦 Total processado", value=f"`{total}`", inline=True)
-        embed_fim.add_field(name="⏱️ Latência de Execução", value=f"`{tempo_decorrido}s`", inline=False)
+        embed_fim.add_field(name="❌ Falhas", value=f"`{falhas}`", inline=True)
+        embed_fim.add_field(name="📦 Total", value=f"`{total}`", inline=True)
+        embed_fim.add_field(name="⏱️ Tempo Gasto", value=f"`{tempo_decorrido}s`", inline=False)
         embed_fim.timestamp = discord.utils.utcnow()
         await log_channel.send(embed=embed_fim)
 
     except Exception as e:
-        print(f"[CRITICAL_ERROR] {e}")
-        await log_channel.send(f"🚨 `[FATAL_EXCEPTION]` Erro no núcleo de transmissão: `{e}`")
+        print(f"Erro no processamento: {e}")
+        await log_channel.send(f"🚨 Ocorreu um erro durante o envio: `{e}`")
 
 # ==============================================
-# COMANDO SLASH: /autorizar (GERENCIAR PERMISSÕES DE ENVIO)
+# COMANDOS SLASH: /autorizar E /remover
 # ==============================================
-@client.tree.command(name="autorizar", description="[DONO] Concede permissão para um usuário usar o comando /enviar")
+@client.tree.command(name="autorizar", description="Concede permissão para um usuário usar o comando /enviar")
 @app_commands.describe(usuario="Membro que receberá a autorização")
 async def autorizar(interaction: discord.Interaction, usuario: discord.User):
-    # Apenas o Dono Principal pode dar permissão de envio
     if interaction.user.id != DONO_ID:
         await interaction.response.send_message("❌ Apenas o desenvolvedor principal pode autorizar novos operadores.", ephemeral=True)
         return
 
     usuarios_autorizados_enviar.add(usuario.id)
     await interaction.response.send_message(
-        content=f"✅ **[AUTORIZAÇÃO CONCEDIDA]** O usuário {usuario.mention} (`{usuario.id}`) agora tem acesso ao comando `/enviar`.",
+        content=f"✅ O usuário {usuario.mention} (`{usuario.id}`) agora tem permissão para usar o comando `/enviar`.",
         ephemeral=True
     )
 
-@client.tree.command(name="remover", description="[DONO] Remove a permissão de um usuário do comando /enviar")
+@client.tree.command(name="remover", description="Remove a permissão de um usuário do comando /enviar")
 @app_commands.describe(usuario="Membro que perderá a autorização")
 async def remover(interaction: discord.Interaction, usuario: discord.User):
     if interaction.user.id != DONO_ID:
@@ -248,7 +243,7 @@ async def remover(interaction: discord.Interaction, usuario: discord.User):
     if usuario.id in usuarios_autorizados_enviar:
         usuarios_autorizados_enviar.remove(usuario.id)
         await interaction.response.send_message(
-            content=f"⚠️ **[ACESSO REVOGADO]** O usuário {usuario.mention} (`{usuario.id}`) foi removido da lista de operadores.",
+            content=f"⚠️ O usuário {usuario.mention} (`{usuario.id}`) foi removido da lista de autorizados.",
             ephemeral=True
         )
     else:
@@ -257,19 +252,18 @@ async def remover(interaction: discord.Interaction, usuario: discord.User):
 # ==============================================
 # COMANDO SLASH: /enviar
 # ==============================================
-@client.tree.command(name="enviar", description="Inicia a injeção de mensagens para todos os membros (Requer Autorização)")
+@client.tree.command(name="enviar", description="Envia mensagem privada para todos os membros do servidor")
 @app_commands.describe(
-    mensagem="Mensagem de payload que será injetada no PV de todos",
-    canal_logs="Canal para telemetria e logs avançados (Opcional)"
+    mensagem="Mensagem que será enviada no PV de todos",
+    canal_logs="Canal de logs onde será exibido o andamento (Opcional)"
 )
 async def enviar(interaction: discord.Interaction, mensagem: str, canal_logs: discord.TextChannel = None):
-    # Verifica se é o dono, se está na lista dinâmica ou se é administrador do servidor
     is_owner = interaction.user.id == DONO_ID
     is_authorized = interaction.user.id in usuarios_autorizados_enviar
     is_admin = interaction.user.guild_permissions.administrator if interaction.guild else False
 
     if not (is_owner or is_authorized or is_admin):
-        await interaction.response.send_message("❌ Você não possui credenciais de acesso para executar este payload!", ephemeral=True)
+        await interaction.response.send_message("❌ Você não possui permissão para usar este comando!", ephemeral=True)
         return
 
     target_channel = canal_logs
@@ -279,12 +273,12 @@ async def enviar(interaction: discord.Interaction, mensagem: str, canal_logs: di
         target_channel = interaction.channel
 
     await interaction.response.send_message(
-        content=f"⚡ **[DISPARADOR ACIONADO]** Injeção iniciada. Acompanhe a telemetria avançada em: {target_channel.mention}",
+        content=f"✅ **Envio iniciado!** Acompanhe os logs detalhados em: {target_channel.mention}",
         ephemeral=True
     )
 
     asyncio.create_task(
-        processar_envio_avancado(
+        processar_envio_elegante(
             guild=interaction.guild,
             log_channel=target_channel,
             mensagem=mensagem,
@@ -293,30 +287,29 @@ async def enviar(interaction: discord.Interaction, mensagem: str, canal_logs: di
     )
 
 # ==============================================
-# COMANDO SLASH: /servidores (EXCLUSIVO DONO PRINCIPAL)
+# COMANDO SLASH: /servidores
 # ==============================================
-@client.tree.command(name="servidores", description="Gerencia as conexões ativas do bot nos servidores")
+@client.tree.command(name="servidores", description="Exibe a lista de servidores em que o bot está instalado")
 async def servidores(interaction: discord.Interaction):
-    # Trava restrita estritamente ao Dono Principal
     if interaction.user.id != DONO_ID:
         await interaction.response.send_message("Este comando não dá para usa ele é feito automático do bot", ephemeral=True)
         return
 
     guilds = client.guilds
     if not guilds:
-        await interaction.response.send_message("O bot não está conectado a nenhuma subnet no momento.", ephemeral=True)
+        await interaction.response.send_message("O bot não está conectado a nenhum servidor no momento.", ephemeral=True)
         return
 
     embed = discord.Embed(
-        title="🌐 [KERNEL_NODES] - SERVIDORES CONECTADOS",
-        description=f"O bot está operacional em **{len(guilds)}** servidor(es):",
-        color=0x00FF66
+        title="🌐 Lista de Servidores Conectados",
+        description=f"O bot está ativo em **{len(guilds)}** servidor(es):",
+        color=0x3498DB
     )
 
     for g in guilds[:10]:
         embed.add_field(
             name=f"📌 {g.name}",
-            value=f"🆔 `ID: {g.id}`\n👥 `Nodes/Membros: {g.member_count}`",
+            value=f"🆔 `ID: {g.id}`\n👥 `Membros: {g.member_count}`",
             inline=False
         )
 
@@ -324,11 +317,12 @@ async def servidores(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 # ==============================================
-# INICIALIZAÇÃO DO NÚCLEO
+# INICIALIZAÇÃO
 # ==============================================
 if __name__ == "__main__":
     manter_online()
     if TOKEN:
         client.run(TOKEN)
     else:
-        print("🚨 [FATAL] Variável DISCORD_TOKEN não encontrada nas configurações do Render!")
+        print("🚨 ERRO: Adicione a variável DISCORD_TOKEN nas configurações do Render!")
+
