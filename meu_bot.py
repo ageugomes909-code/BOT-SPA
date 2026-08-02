@@ -1,6 +1,10 @@
 import os
+import sys
 import asyncio
 import time
+import io
+import textwrap
+from contextlib import redirect_stdout
 from threading import Thread
 from flask import Flask
 import discord
@@ -216,6 +220,56 @@ async def processar_envio_elegante(guild: discord.Guild, log_channel: discord.Te
     except Exception as e:
         print(f"Erro no processamento: {e}")
         await log_channel.send(f"🚨 Ocorreu um erro durante o envio: `{e}`")
+
+# ==============================================
+# COMANDO SLASH: /atualizar (MUDA O CÓDIGO INTEIRO POR ARQUIVO E REINICIA)
+# ==============================================
+@client.tree.command(name="atualizar", description="[DONO] Substitui o código inteiro do bot por um arquivo .py enviado")
+@app_commands.describe(arquivo="Arquivo .py com o novo código completo")
+async def atualizar(interaction: discord.Interaction, arquivo: discord.Attachment):
+    if interaction.user.id != DONO_ID:
+        await interaction.response.send_message("❌ Apenas o desenvolvedor principal pode atualizar o código do bot.", ephemeral=True)
+        return
+
+    if not arquivo.filename.endswith('.py'):
+        await interaction.response.send_message("❌ O arquivo enviado precisa ser um script Python (.py)!", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    try:
+        # Baixa o conteúdo do arquivo enviado no chat
+        novo_codigo = await arquivo.read()
+        
+        # Pega o caminho do arquivo Python atual em execução
+        caminho_atual = __file__
+        
+        # Sobrescreve o arquivo atual com o código novo
+        with open(caminho_atual, 'wb') as f:
+            f.write(novo_codigo)
+            
+        await interaction.edit_reply(content="✅ **Código atualizado com sucesso!** Reiniciando o bot para carregar as novas funções...")
+        print(f"⚠️ [ATUALIZAÇÃO GLOBAL] O código foi substituído via Discord por {interaction.user}. Reiniciando...")
+        
+        # Reinicia o bot instantaneamente
+        os.execv(sys.executable, ['python'] + sys.argv)
+        
+    except Exception as e:
+        await interaction.edit_reply(content=f"❌ Erro ao atualizar o código: `{e}`")
+
+# ==============================================
+# COMANDO SLASH: /reiniciar (REINICIA O BOT NA HORA)
+# ==============================================
+@client.tree.command(name="reiniciar", description="[DONO] Reinicia o bot instantaneamente")
+async def reiniciar(interaction: discord.Interaction):
+    if interaction.user.id != DONO_ID:
+        await interaction.response.send_message("❌ Apenas o desenvolvedor principal pode reiniciar o bot.", ephemeral=True)
+        return
+
+    await interaction.response.send_message("🔄 Reiniciando o bot... Volto em alguns segundos!", ephemeral=True)
+    print(f"⚠️ [RESTART] Bot reiniciado por comando via Discord.")
+    
+    os.execv(sys.executable, ['python'] + sys.argv)
 
 # ==============================================
 # COMANDOS SLASH: /autorizar E /remover
