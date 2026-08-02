@@ -1,4 +1,4 @@
-Import os
+import os
 import asyncio
 import time
 from threading import Thread
@@ -326,6 +326,3 @@ if __name__ == "__main__":
     else:
         print("🚨 ERRO: Adicione a variável DISCORD_TOKEN nas configurações do Render!")
 
-
-
-Mano manda completo o codigo mas faca ir mas rapido as mensagem mas no limite do discord mas ir rapida e ter visual etc mas bonito das logs
